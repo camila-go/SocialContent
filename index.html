@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Social Feed Stream — Capella x WNBA</title>
+<link rel="stylesheet" href="https://use.typekit.net/rik2kml.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&amp;display=swap" rel="stylesheet">
+<style>
+  :root{
+    --gl-neutral-900:#000000;
+    --gl-neutral-800:#191919;
+    --gl-neutral-300:#929292;
+    --gl-neutral-200:#adadad;
+    --gl-neutral-0:#ffffff;
+    --accent:#c10016;
+    --accent-hover:#98010f;
+    --radius-btn:32px;
+    /* Verified against the live Typekit kit (use.typekit.net/rik2kml.css):
+       the kit exposes a single variable font family, "acumin-variable"
+       (weight axis 100-900). The Figma design's "Acumin VF, ExtraCondensed
+       Black" look is reproduced via font-weight + the "wdth" variation axis,
+       not a separate condensed static family. */
+    --font-display:"acumin-variable","Arial Narrow",sans-serif;
+    --font-ui:"Inter",system-ui,-apple-system,sans-serif;
+  }
+
+  *{box-sizing:border-box;}
+
+  .social-feed{
+    background:var(--gl-neutral-900);
+    color:var(--gl-neutral-0);
+    font-family:var(--font-ui);
+    padding:100px 0;
+    width:100%;
+    overflow:hidden;
+  }
+
+  .social-feed__inner{
+    max-width:1560px;
+    margin:0 auto;
+  }
+
+  .social-feed__header{
+    padding:0 60px;
+    margin-bottom:64px;
+  }
+
+  .social-feed__heading{
+    font-family:var(--font-display);
+    font-weight:800;
+    font-variation-settings:"wdth" 50;
+    text-transform:uppercase;
+    font-size:100px;
+    line-height:0.9;
+    margin:0;
+    letter-spacing:0;
+  }
+
+  /* --- feed strip / stream --- */
+  .social-feed__strip{
+    display:flex;
+    gap:20px;
+    padding:0 60px 12px;
+    overflow-x:auto;
+    scroll-snap-type:x proximity;
+    scrollbar-width:thin;
+    scrollbar-color:var(--gl-neutral-800) transparent;
+  }
+  .social-feed__strip::-webkit-scrollbar{height:8px;}
+  .social-feed__strip::-webkit-scrollbar-track{background:transparent;}
+  .social-feed__strip::-webkit-scrollbar-thumb{background:var(--gl-neutral-800);border-radius:8px;}
+
+  /* Every card — regardless of platform/media type — shares the exact same
+     chrome: fixed height, media-left/meta-right row, same border, padding
+     and type scale. This is what the Figma "Card" component does (image
+     tile + meta panel, both 440px tall) and it's what keeps four very
+     different embeds (video, image, text+image, image) reading as one
+     consistent set. */
+  .feed-card{
+    scroll-snap-align:start;
+    flex:0 0 auto;
+    width:620px;
+    height:440px;
+    background:var(--gl-neutral-900);
+    border:1px solid var(--gl-neutral-800);
+    display:flex;
+    flex-direction:row;
+    overflow:hidden;
+  }
+
+  .feed-card__media{
+    position:relative;
+    width:260px;
+    height:100%;
+    flex-shrink:0;
+    background:#0d0d0d;
+    overflow:hidden;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+  }
+
+  /* TikTok and Instagram both enforce their own minimum embed width and
+     ignore a plain CSS width/height on the generated iframe once it
+     hydrates. Earlier versions of this file forced a guessed pixel size
+     onto the iframe via !important and computed a matching transform:
+     scale() by hand — but that guess didn't match what TikTok actually
+     renders (its real embed is a thumbnail + a separate white info panel
+     with a Watch button/handle/caption/music credit, not a bare video
+     player), so the card came out visibly smaller than the others instead
+     of covering the frame. Instead, the iframe is left at its own natural
+     size here, and the <script> at the bottom of this file measures its
+     REAL rendered size once it mounts and applies transform:scale()
+     dynamically to cover the current media panel (260x440 desktop /
+     340x220 mobile) — this self-corrects regardless of what either
+     platform ships, rather than a static number that can silently drift
+     out of sync with reality. */
+  #instagram-media iframe,
+  #tiktok-media iframe{
+    position:static !important;
+    max-width:none !important;
+    flex-shrink:0;
+    border:0 !important;
+    margin:0 !important;
+  }
+
+  /* TikTok's info panel (Watch button, handle, caption, music credit) sits
+     at the BOTTOM of its embed, below the thumbnail — so any cropping
+     needs to come from the top only, never through that panel. Bottom-
+     aligning the container plus a bottom transform-origin means the
+     JS-applied scale always trims the thumbnail first and leaves the info
+     panel fully intact, however the video/handle text end up. */
+  #tiktok-media{
+    align-items:flex-end;
+  }
+  #tiktok-media iframe{
+    transform-origin:center bottom;
+  }
+
+  /* TikTok/Instagram official embeds hydrate the blockquote into their own
+     iframe at runtime. Until that happens (or if the script is blocked),
+     show their built-in fallback links legibly on our dark background
+     instead of leaving default (invisible, near-black) link styling. */
+  .feed-card__media blockquote{
+    margin:0;
+    max-width:100% !important;
+    min-width:0 !important;
+    width:100%;
+    padding:16px;
+    color:var(--gl-neutral-0);
+    font-family:var(--font-ui);
+    font-size:13px;
+    line-height:1.5;
+    text-align:center;
+  }
+  .feed-card__media blockquote a{
+    color:var(--gl-neutral-0);
+    text-decoration:underline;
+    word-break:break-word;
+  }
+
+  /* Self-contained brand graphic used for both the LinkedIn and Facebook
+     media panels — no external logo/image fetch to fail, and it echoes the
+     real campaign creative's red background + bold display type. It
+     always fills the 260x440 frame exactly, unlike a live embed. */
+  .feed-card__media--linkedin,
+  .feed-card__media--facebook{
+    background:var(--accent);
+  }
+  .brand-graphic__text{
+    margin:0;
+    padding:24px;
+    text-align:center;
+    color:var(--gl-neutral-0);
+    font-family:var(--font-display);
+    font-weight:800;
+    font-variation-settings:"wdth" 60;
+    text-transform:uppercase;
+    font-size:34px;
+    line-height:0.95;
+  }
+
+  .feed-card__meta{
+    display:flex;
+    flex-direction:column;
+    justify-content:space-between;
+    gap:24px;
+    padding:32px;
+    flex:1 1 auto;
+    min-width:0;
+  }
+
+  .feed-card__top{
+    display:flex;
+    flex-direction:column;
+    gap:12px;
+  }
+
+  .feed-card__time{
+    color:var(--gl-neutral-300);
+    font-size:16px;
+    font-weight:400;
+  }
+
+  .feed-card__handle{
+    color:var(--gl-neutral-0);
+    font-size:20px;
+    font-weight:700;
+  }
+
+  .feed-card__caption{
+    color:var(--gl-neutral-300);
+    font-size:14px;
+    line-height:1.5;
+  }
+
+  .feed-card__bottom{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+  }
+
+  .feed-card__view{
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    color:var(--gl-neutral-200);
+    font-size:16px;
+    font-weight:700;
+    text-decoration:none;
+    white-space:nowrap;
+  }
+  .feed-card__view:hover{ color:var(--gl-neutral-0); }
+  .feed-card__view svg{ width:18px; height:18px; flex-shrink:0; }
+
+  /* --- footer --- */
+  .social-feed__footer{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:24px;
+    padding:56px 60px 0;
+    flex-wrap:wrap;
+  }
+
+  .social-feed__footer-label{
+    color:var(--gl-neutral-300);
+    font-size:20px;
+    font-weight:700;
+    flex:1 1 240px;
+  }
+
+  .social-feed__cta{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    gap:8px;
+    background:var(--gl-neutral-0);
+    color:var(--accent);
+    font-family:var(--font-ui);
+    font-weight:700;
+    font-size:16px;
+    text-decoration:none;
+    padding:12px 20px;
+    height:48px;
+    border-radius:var(--radius-btn);
+    transition:opacity 0.15s ease;
+    white-space:nowrap;
+  }
+  .social-feed__cta:hover{ opacity:0.85; }
+
+  @media (max-width:640px){
+    .social-feed{ padding:64px 0; }
+    .social-feed__header{ padding:0 24px; margin-bottom:40px; }
+    .social-feed__heading{ font-size:56px; }
+    .social-feed__strip{ padding:0 24px 12px; }
+    /* Cards keep a fixed size at mobile too (340x220 media panel) instead
+       of a fluid 88vw/100% — the horizontal-scroll strip already handles
+       overflow at every breakpoint (same pattern as desktop's fixed
+       620x440 cards), and a *known* fixed target box is what the
+       TikTok/Instagram cover-scale transforms below require: transform:
+       scale() is a static number and can't react to a fluid container
+       width without JS or container queries. */
+    .feed-card{ width:340px; height:auto; flex-direction:column; }
+    .feed-card__media{ width:340px; height:220px; }
+    /* No mobile-specific transform:scale() override needed here — the JS
+       cover-scale watcher re-measures and reapplies on resize, so it picks
+       up this breakpoint's 340x220 target automatically. */
+    .social-feed__footer{ padding:40px 24px 0; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Shared icon sprite: the "view on X" arrow is identical across all four
+     cards, defined once here and referenced via <use> instead of repeating
+     the raw <svg><path> markup four times. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="icon-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    <path d="M7 17L17 7M7 7h10v10"/>
+  </symbol>
+</svg>
+
+<section class="social-feed" aria-label="Social feed stream">
+  <div class="social-feed__inner">
+
+    <div class="social-feed__header">
+      <h2 class="social-feed__heading">Latest<br>Highlights</h2>
+    </div>
+
+    <div class="social-feed__strip" id="feedStrip" role="list">
+
+      <!-- TikTok (video) -->
+      <article class="feed-card" role="listitem" data-platform="tiktok">
+        <div class="feed-card__media" id="tiktok-media">
+          <blockquote class="tiktok-embed"
+            cite="https://www.tiktok.com/@capellauniversity/video/7660591110850415885"
+            data-video-id="7660591110850415885"
+            style="width:325px;">
+            <section>
+              <a target="_blank" title="@capellauniversity"
+                 href="https://www.tiktok.com/@capellauniversity?refer=embed">@capellauniversity</a>
+              <a target="_blank"
+                 href="https://www.tiktok.com/@capellauniversity/video/7660591110850415885?refer=embed">
+                 Watch on TikTok
+              </a>
+            </section>
+          </blockquote>
+        </div>
+        <div class="feed-card__meta">
+          <div class="feed-card__top">
+            <p class="feed-card__time">New</p>
+            <p class="feed-card__handle">@capellauniversity</p>
+            <p class="feed-card__caption">Video from Capella University's TikTok, part of its new partnership as the Official Higher Learning Partner of the WNBA.</p>
+          </div>
+          <div class="feed-card__bottom">
+            <a class="feed-card__view" href="https://www.tiktok.com/@capellauniversity/video/7660591110850415885" target="_blank" rel="noopener">
+              View on TikTok
+              <svg aria-hidden="true"><use href="#icon-arrow"></use></svg>
+            </a>
+          </div>
+        </div>
+      </article>
+
+      <!-- Instagram (static) -->
+      <article class="feed-card" role="listitem" data-platform="instagram">
+        <div class="feed-card__media" id="instagram-media">
+          <!-- No custom platform badge: Instagram's hydrated embed shows
+               its own header (profile photo, handle, IG glyph). -->
+          <blockquote class="instagram-media"
+            data-instgrm-permalink="https://www.instagram.com/p/DalNipSgduU/?img_index=1"
+            data-instgrm-version="14"
+            style="width:326px;">
+          </blockquote>
+        </div>
+        <div class="feed-card__meta">
+          <div class="feed-card__top">
+            <p class="feed-card__time">New</p>
+            <p class="feed-card__handle">@capellauniversity</p>
+            <p class="feed-card__caption">Static Instagram post celebrating Capella University's new WNBA partnership.</p>
+          </div>
+          <div class="feed-card__bottom">
+            <a class="feed-card__view" href="https://www.instagram.com/p/DalNipSgduU/?img_index=1" target="_blank" rel="noopener">
+              View on Instagram
+              <svg aria-hidden="true"><use href="#icon-arrow"></use></svg>
+            </a>
+          </div>
+        </div>
+      </article>
+
+      <!-- LinkedIn (text + image) -->
+      <article class="feed-card" role="listitem" data-platform="linkedin">
+        <div class="feed-card__media feed-card__media--linkedin">
+          <p class="brand-graphic__text">Official Higher<br>Learning Partner<br>of the WNBA</p>
+        </div>
+        <div class="feed-card__meta">
+          <div class="feed-card__top">
+            <p class="feed-card__time">Jul 9, 2026</p>
+            <p class="feed-card__handle">Capella University</p>
+            <p class="feed-card__caption">"Capella University is proud to announce that we are the Official Higher Learning Partner of the WNBA" — a multi-year partnership that also makes Capella the Presenting Partner of WNBA overtime, providing players, league staff and team employees access to Capella's online degree programs and professional development resources.</p>
+          </div>
+          <div class="feed-card__bottom">
+            <a class="feed-card__view" href="https://www.wnba.com/news/capella-university-official-higher-learning-partner-of-the-wnba" target="_blank" rel="noopener">
+              Read the announcement
+              <svg aria-hidden="true"><use href="#icon-arrow"></use></svg>
+            </a>
+          </div>
+        </div>
+      </article>
+
+      <!-- Facebook (static) -->
+      <article class="feed-card" role="listitem" data-platform="facebook">
+        <div class="feed-card__media feed-card__media--facebook">
+          <!-- Switched from a live Page Plugin iframe to a static graphic:
+               Facebook's plain (non-SDK) iframe embed never reports its
+               true rendered height back to the parent page, so any height
+               we pick for the cover-scale math is a guess — it kept coming
+               out either cropped or, as here, under-filled with a gap at
+               the bottom. This reproduces the actual real post creative
+               (confirmed via the live embed's own screenshots: red
+               background, bold headline, page name + like/comment/share
+               counts) as a guaranteed, correctly-filling graphic instead. -->
+          <p class="brand-graphic__text">Capella is the<br>Official Higher<br>Learning Partner<br>of the WNBA.</p>
+        </div>
+        <div class="feed-card__meta">
+          <div class="feed-card__top">
+            <p class="feed-card__time">New</p>
+            <p class="feed-card__handle">Capella University</p>
+            <p class="feed-card__caption">Static Facebook photo post from Capella University's WNBA partnership announcement.</p>
+          </div>
+          <div class="feed-card__bottom">
+            <a class="feed-card__view" href="https://www.facebook.com/photo?fbid=1433393835489081&amp;set=a.640810724747400" target="_blank" rel="noopener">
+              View on Facebook
+              <svg aria-hidden="true"><use href="#icon-arrow"></use></svg>
+            </a>
+          </div>
+        </div>
+      </article>
+
+    </div>
+
+    <div class="social-feed__footer">
+      <p class="social-feed__footer-label">Join the community on social</p>
+      <a class="social-feed__cta" href="https://www.instagram.com/capellau/" target="_blank" rel="noopener">Follow the action</a>
+    </div>
+
+  </div>
+</section>
+
+<script>
+(function(){
+  "use strict";
+
+  // Load an external script once, resolve/reject via callbacks (no framework, plain JS).
+  function loadScript(src, onload, onerror){
+    var s = document.createElement('script');
+    s.src = src;
+    s.async = true;
+    if (onload) s.onload = onload;
+    if (onerror) s.onerror = onerror;
+    document.body.appendChild(s);
+    return s;
+  }
+
+  // If a platform's embed script fails to load (offline, blocked, CDN down),
+  // the blockquote's own built-in fallback link stays visible and usable —
+  // this just logs which one failed so it's easy to spot in devtools rather
+  // than failing silently.
+  function onEmbedScriptError(platformName){
+    return function(){
+      console.warn('[social-feed] ' + platformName + ' embed script failed to load; showing the built-in fallback link instead.');
+    };
+  }
+
+  // --- Live-measured cover scale for the TikTok/Instagram embeds ---
+  // Earlier versions hardcoded a transform:scale() value per platform,
+  // computed by hand against an assumed natural iframe size — that guess
+  // didn't match what TikTok actually renders (see the CSS comment above
+  // #instagram-media/#tiktok-media), which is why that card came out
+  // visibly smaller than the others instead of covering its frame. This
+  // measures each iframe's REAL rendered size once it exists in the DOM
+  // and computes the scale from that, so it self-corrects regardless of
+  // what either platform ships, and re-applies whenever the mobile/desktop
+  // breakpoint changes.
+  function currentMediaTarget(){
+    return window.matchMedia('(max-width:640px)').matches
+      ? { w: 340, h: 220 }
+      : { w: 260, h: 440 };
+  }
+
+  function applyCoverScale(mediaId){
+    var container = document.getElementById(mediaId);
+    if (!container) return false;
+    var iframe = container.querySelector('iframe');
+    // offsetWidth/offsetHeight reflect the iframe's natural layout box and
+    // ignore any transform already applied (unlike getBoundingClientRect),
+    // so it's safe to re-measure after a scale has already been set.
+    if (!iframe || !iframe.offsetWidth || !iframe.offsetHeight) return false;
+    var target = currentMediaTarget();
+    var scale = Math.max(target.w / iframe.offsetWidth, target.h / iframe.offsetHeight);
+    iframe.style.transform = 'scale(' + scale.toFixed(4) + ')';
+    return true;
+  }
+
+  function watchForEmbed(mediaId){
+    if (applyCoverScale(mediaId)) return;
+    var container = document.getElementById(mediaId);
+    if (!container) return;
+    var observer = new MutationObserver(function(){
+      applyCoverScale(mediaId);
+    });
+    observer.observe(container, { childList: true, subtree: true });
+    // Some embeds finalize their real size a moment after first mounting —
+    // re-check a few times over the following seconds as a safety net.
+    [300, 800, 1500, 3000].forEach(function(delay){
+      setTimeout(function(){ applyCoverScale(mediaId); }, delay);
+    });
+  }
+
+  var resizeTimer;
+  window.addEventListener('resize', function(){
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(function(){
+      applyCoverScale('tiktok-media');
+      applyCoverScale('instagram-media');
+    }, 150);
+  });
+
+  watchForEmbed('tiktok-media');
+  watchForEmbed('instagram-media');
+
+  // TikTok official embed script — hydrates the .tiktok-embed blockquote into a live player.
+  loadScript('https://www.tiktok.com/embed.js', null, onEmbedScriptError('TikTok'));
+
+  // Instagram official embed script — hydrates .instagram-media blockquotes into live posts.
+  loadScript('https://www.instagram.com/embed.js', function(){
+    if (window.instgrm && window.instgrm.Embeds) {
+      window.instgrm.Embeds.process();
+    }
+  }, onEmbedScriptError('Instagram'));
+})();
+</script>
+
+</body>
+</html>
